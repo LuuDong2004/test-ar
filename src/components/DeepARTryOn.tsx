@@ -4,6 +4,21 @@ import { DEEPAR_ROOT_PATH } from '../config/deeparEffects';
 
 const LICENSE_KEY = (import.meta.env.VITE_DEEPAR_LICENSE_KEY as string | undefined) ?? '';
 
+// Pin the wrist tracking assets explicitly:
+//  - use the smaller FAST tracker (2.4 MB vs 3.6 MB) for a quicker first load;
+//  - point pose-estimation at the REAL file name (libxzimgPoseEstimation.wasm) —
+//    the SDK's documented default (libPoseEstimation.wasm) 404s and stalls init.
+const ROOT = DEEPAR_ROOT_PATH.replace(/\/$/, '');
+const WRIST_TRACKING_CONFIG = {
+  poseEstimationWasmPath: `${ROOT}/wasm/libxzimgPoseEstimation.wasm`,
+  detectorPath: `${ROOT}/models/wrist/wrist-det-9.bin`,
+  trackerPath: `${ROOT}/models/wrist/wrist-track-181-fast-q.bin`,
+  objPath: `${ROOT}/models/wrist/wrist-track.obj`,
+  tfjsBackendWasmPath: `${ROOT}/wasm/tfjs-backend-wasm.wasm`,
+  tfjsBackendWasmSimdPath: `${ROOT}/wasm/tfjs-backend-wasm-simd.wasm`,
+  tfjsBackendWasmThreadedSimdPath: `${ROOT}/wasm/tfjs-backend-wasm-threaded-simd.wasm`,
+};
+
 interface DeepARTryOnProps {
   /** URL of the .deepar effect to load. */
   effect: string;
@@ -53,7 +68,12 @@ export function DeepARTryOn({ effect, wrist, facing }: DeepARTryOnProps) {
           licenseKey: LICENSE_KEY,
           previewElement: el,
           rootPath: DEEPAR_ROOT_PATH,
-          additionalOptions: { cameraConfig: { disableDefaultCamera: true } },
+          additionalOptions: {
+            cameraConfig: { disableDefaultCamera: true },
+            // Only fetched when a wrist effect lazily inits tracking; pins the
+            // fast model + correct pose-wasm so it loads fast and doesn't stall.
+            ...(wrist ? { wristTrackingConfig: WRIST_TRACKING_CONFIG } : {}),
+          },
         });
         if (cancelled) {
           instance.shutdown();

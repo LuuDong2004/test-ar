@@ -10,8 +10,11 @@ const CDN = `https://cdn.jsdelivr.net/npm/deepar@${deeparVersion}`;
  *  - The face smoke-test stays on the CDN (we don't self-host face models).
  * Override the self-hosted root with VITE_DEEPAR_ROOT_PATH if needed.
  */
+// Versioned path (matches deepar@5.6.3) so a future SDK bump gets a fresh URL —
+// the 1-year immutable cache below would otherwise serve a stale, version-skewed
+// deepar.wasm and crash with an embind LinkError.
 export const DEEPAR_ROOT_SELF =
-  (import.meta.env.VITE_DEEPAR_ROOT_PATH as string | undefined) || '/deepar';
+  (import.meta.env.VITE_DEEPAR_ROOT_PATH as string | undefined) || '/deepar563';
 export const DEEPAR_ROOT_CDN = `${CDN}/`;
 
 /** Base URL for the effect files bundled with the SDK (face filters, smoke-test). */

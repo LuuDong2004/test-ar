@@ -51,7 +51,9 @@ export function DeepARTryOn({ effect, wrist }: DeepARTryOnProps) {
           // Pre-init wrist tracking for watch effects so the first detection is fast.
           effectOptions: { trackingInit: { wrist } },
           additionalOptions: {
-            cameraConfig: { facingMode: 'environment' }, // rear camera to film the wrist
+            // Wrist (watch) → rear camera to film the forearm; face effects (the
+            // glasses smoke-test) → front camera so you can see your own face.
+            cameraConfig: { facingMode: wrist ? 'environment' : 'user' },
           },
         });
         if (cancelled) {

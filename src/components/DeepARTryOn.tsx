@@ -9,23 +9,25 @@ interface DeepARTryOnProps {
   effect: string;
   /** True when the effect needs wrist tracking (a watch). */
   wrist: boolean;
+  /** Which camera to use. */
+  facing: 'user' | 'environment';
 }
 
 /**
  * DeepAR Web SDK try-on surface (own canvas; cannot share the Three.js scene).
  *
- * Init is decoupled from effect loading on purpose: initialize() only brings up
- * the camera (resolves fast), THEN switchEffect() loads the effect and lazily
- * pulls the wrist ML models (~5 MB). If we passed the effect + trackingInit into
- * initialize(), it would block on that whole download and look frozen on a
- * phone. This way the camera shows immediately and the watch appears when ready.
+ * We manage the camera ourselves (disableDefaultCamera + startCamera) because
+ * DeepAR mirrors the preview by default — wrong for a rear-camera watch try-on.
+ * Mirror is on only for the selfie/face camera. Init is also decoupled from the
+ * effect download so the camera shows immediately and the watch loads after.
  */
-export function DeepARTryOn({ effect, wrist }: DeepARTryOnProps) {
+export function DeepARTryOn({ effect, wrist, facing }: DeepARTryOnProps) {
   const previewRef = useRef<HTMLDivElement>(null);
   const deeparRef = useRef<DeepAR | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true); // initialising camera
-  const [switching, setSwitching] = useState(false); // loading the effect/models
+  const [loading, setLoading] = useState(true); // bringing up the camera
+  const [switching, setSwitching] = useState(false); // loading effect/models
+  const [wristDetected, setWristDetected] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -38,25 +40,40 @@ export function DeepARTryOn({ effect, wrist }: DeepARTryOnProps) {
       return;
     }
 
+    const mirror = facing === 'user'; // selfie mirrored; rear (wrist) NOT mirrored
+
     (async () => {
       try {
-        // 1) Camera + license only — no effect here so it resolves quickly.
+        // 1) Init SDK only — we start the camera ourselves for mirror control.
         const instance = await initialize({
           licenseKey: LICENSE_KEY,
           previewElement: el,
           rootPath: DEEPAR_ROOT_PATH,
-          additionalOptions: {
-            cameraConfig: { facingMode: wrist ? 'environment' : 'user' },
-          },
+          additionalOptions: { cameraConfig: { disableDefaultCamera: true } },
         });
         if (cancelled) {
           instance.shutdown();
           return;
         }
         deeparRef.current = instance;
+
+        // Wrist detection signal (only fires while a wrist effect is loaded).
+        instance.callbacks.onWristTracked = (d) => {
+          if (!cancelled) setWristDetected(!!d?.detected);
+        };
+
+        // 2) Start the chosen camera with correct mirroring.
+        await instance.startCamera({
+          mirror,
+          mediaStreamConstraints: {
+            video: { facingMode: { ideal: facing } },
+            audio: false,
+          },
+        });
+        if (cancelled) return;
         setLoading(false);
 
-        // 2) Load the effect (lazily downloads + inits wrist tracking if needed).
+        // 3) Load the effect (lazily pulls the wrist models on first use).
         setSwitching(true);
         await instance.switchEffect(effect);
         if (!cancelled) setSwitching(false);
@@ -74,8 +91,7 @@ export function DeepARTryOn({ effect, wrist }: DeepARTryOnProps) {
       deeparRef.current?.shutdown();
       deeparRef.current = null;
     };
-    // The page remounts this component (key={id}) when the watch changes, so a
-    // single init+load per mount is all we need.
+    // Remounted (key) when watch/camera changes, so a single setup per mount.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -96,6 +112,16 @@ export function DeepARTryOn({ effect, wrist }: DeepARTryOnProps) {
           <p className="rounded-full bg-black/60 px-4 py-2 text-xs text-white/85 backdrop-blur">
             {wrist ? 'Đang tải mẫu đồng hồ (lần đầu hơi lâu)…' : 'Đang tải hiệu ứng…'}
           </p>
+        </div>
+      )}
+
+      {/* Wrist not found hint — the watch only appears when a wrist is detected. */}
+      {wrist && !loading && !switching && !error && !wristDetected && (
+        <div className="pointer-events-none absolute left-1/2 top-1/2 z-20 -translate-x-1/2 -translate-y-1/2 text-center">
+          <div className="rounded-2xl bg-black/55 px-5 py-3 backdrop-blur">
+            <p className="text-sm font-medium text-white/90">Đưa cổ tay vào khung hình</p>
+            <p className="mt-1 text-xs text-white/55">Camera sau · mu bàn tay hướng lên · cách ~30&nbsp;cm</p>
+          </div>
         </div>
       )}
 

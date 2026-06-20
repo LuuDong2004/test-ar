@@ -2,19 +2,26 @@ import { useState } from 'react';
 import { DeepARTryOn } from '../components/DeepARTryOn';
 import { DEEPAR_EFFECTS, DEFAULT_DEEPAR_ID, getDeepAREffect } from '../config/deeparEffects';
 
+type Facing = 'user' | 'environment';
+
 /**
  * DeepAR watch try-on page (default engine). MediaPipe stays at `?engine=mediapipe`.
  *
- * IMPORTANT: DeepAR is initialised ONLY after the user taps "Bắt đầu", never on
- * page load. DeepAR counts usage (MAU) when the SDK initialises, so gating it
- * behind a tap means just opening the link costs nothing — and it satisfies the
- * iOS Safari rule that the camera can only start from a user gesture.
+ * DeepAR initialises ONLY after the user taps "Bắt đầu" (saves free MAU + lets
+ * the camera start from a user gesture on iOS).
  */
 export default function DeepARTryOnPage() {
   const [id, setId] = useState(DEFAULT_DEEPAR_ID);
+  const [facing, setFacing] = useState<Facing>('environment');
   const [started, setStarted] = useState(false);
   const current = getDeepAREffect(id);
   const effect = current?.effect ?? '';
+
+  // Pick an effect and default its camera (watch → rear, face → front).
+  const selectEffect = (newId: string) => {
+    setId(newId);
+    setFacing(getDeepAREffect(newId)?.wrist ? 'environment' : 'user');
+  };
 
   const goToMediaPipe = () => {
     const url = new URL(window.location.href);
@@ -34,12 +41,11 @@ export default function DeepARTryOnPage() {
           Chọn mẫu rồi bấm Bắt đầu. Camera chỉ bật khi bạn bấm — mở trang không tốn lượt dùng.
         </p>
 
-        {/* Pick an effect before starting */}
         <div className="mt-6 flex max-w-md flex-wrap justify-center gap-2">
           {DEEPAR_EFFECTS.map((e) => (
             <button
               key={e.id}
-              onClick={() => setId(e.id)}
+              onClick={() => selectEffect(e.id)}
               className={`rounded-full border px-4 py-2 text-sm font-semibold transition active:scale-95 ${
                 e.id === id
                   ? 'border-[#B8924A] bg-[#B8924A]/20 text-[#f0d9a8]'
@@ -72,7 +78,8 @@ export default function DeepARTryOnPage() {
   // --- Live try-on (SDK initialised here) -----------------------------------
   return (
     <main className="relative h-[100dvh] w-screen overflow-hidden bg-black text-white">
-      {effect && <DeepARTryOn key={id} effect={effect} wrist={!!current?.wrist} />}
+      {/* key includes facing so flipping the camera re-inits cleanly */}
+      {effect && <DeepARTryOn key={`${id}-${facing}`} effect={effect} wrist={!!current?.wrist} facing={facing} />}
 
       {/* Top bar */}
       <div className="pointer-events-none absolute inset-x-0 top-0 z-30 flex items-start justify-between p-4">
@@ -82,13 +89,20 @@ export default function DeepARTryOnPage() {
           </p>
           {current?.name && <p className="text-xs font-semibold text-white/95">{current.name}</p>}
         </div>
-        {/* Stop: unmounts DeepAR → shutdown() releases camera + stops usage */}
-        <button
-          onClick={() => setStarted(false)}
-          className="pointer-events-auto rounded-full bg-white/15 px-3 py-1.5 text-xs font-semibold text-white backdrop-blur transition active:scale-95 hover:bg-white/25"
-        >
-          ✕ Dừng
-        </button>
+        <div className="pointer-events-auto flex gap-2">
+          <button
+            onClick={() => setFacing((f) => (f === 'user' ? 'environment' : 'user'))}
+            className="rounded-full bg-white/15 px-3 py-1.5 text-xs font-semibold text-white backdrop-blur transition active:scale-95 hover:bg-white/25"
+          >
+            ⟲ Lật cam ({facing === 'environment' ? 'sau' : 'trước'})
+          </button>
+          <button
+            onClick={() => setStarted(false)}
+            className="rounded-full bg-white/15 px-3 py-1.5 text-xs font-semibold text-white backdrop-blur transition active:scale-95 hover:bg-white/25"
+          >
+            ✕ Dừng
+          </button>
+        </div>
       </div>
 
       {/* Effect selector */}
@@ -96,7 +110,7 @@ export default function DeepARTryOnPage() {
         {DEEPAR_EFFECTS.map((e) => (
           <button
             key={e.id}
-            onClick={() => setId(e.id)}
+            onClick={() => selectEffect(e.id)}
             className={`shrink-0 rounded-full border px-4 py-2 text-sm font-semibold backdrop-blur transition active:scale-95 ${
               e.id === id
                 ? 'border-[#B8924A] bg-[#B8924A]/20 text-[#f0d9a8]'

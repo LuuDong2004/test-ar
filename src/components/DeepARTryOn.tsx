@@ -63,9 +63,11 @@ export function DeepARTryOn({ effect, wrist, facing }: DeepARTryOnProps) {
     const mirror = facing === 'user'; // selfie mirrored; rear (wrist) NOT mirrored
     // Wrist self-hosts its assets (fast, cached); the face smoke-test uses the CDN.
     const rootPath = wrist ? DEEPAR_ROOT_SELF : DEEPAR_ROOT_CDN;
+    const log = (m: string) => console.log(`[try-on] ${m}`);
 
     (async () => {
       try {
+        log(`init start · wrist=${wrist} · facing=${facing} · root=${rootPath}`);
         const instance = await initialize({
           licenseKey: LICENSE_KEY,
           previewElement: el,
@@ -82,38 +84,57 @@ export function DeepARTryOn({ effect, wrist, facing }: DeepARTryOnProps) {
           return;
         }
         deeparRef.current = instance;
+        log('init done (SDK ready)');
 
-        // Wrist tracking is lazy-loaded by the watch effect. These callbacks tell
-        // us when the ~5 MB models finished initialising and when a wrist is seen.
         instance.callbacks.onWristTrackingInitialized = () => {
+          log('✅ onWristTrackingInitialized');
           if (!cancelled) setWristReady(true);
         };
+        let firstWrist = true;
         instance.callbacks.onWristTracked = (d) => {
+          if (firstWrist) {
+            log(`onWristTracked first · detected=${d?.detected}`);
+            firstWrist = false;
+          }
           if (!cancelled) setWristDetected(!!d?.detected);
         };
 
         await instance.startCamera({
           mirror,
-          mediaStreamConstraints: {
-            video: { facingMode: { ideal: facing } },
-            audio: false,
-          },
+          mediaStreamConstraints: { video: { facingMode: { ideal: facing } }, audio: false },
         });
         if (cancelled) return;
         setLoading(false);
+        log('camera started');
 
-        // Load the effect file (1–2 MB). This TRIGGERS the lazy wrist-model load.
+        // Poll wrist init so we can see whether it ever completes even if
+        // switchEffect itself stalls.
+        if (wrist) {
+          let ticks = 0;
+          const poll = setInterval(() => {
+            ticks++;
+            const ok = deeparRef.current?.isWristTrackingInitialized?.();
+            log(`wrist init check #${ticks}: ${ok}`);
+            if (ok || cancelled || ticks > 20) clearInterval(poll);
+          }, 2000);
+        }
+
+        // Load the effect with a timeout so a stall surfaces instead of hanging.
         setSwitching(true);
-        await instance.switchEffect(effect);
+        log(`switchEffect start: ${effect}`);
+        await Promise.race([
+          instance.switchEffect(effect),
+          new Promise((_, rej) => setTimeout(() => rej(new Error('switchEffect quá 30s — không hoàn tất')), 30000)),
+        ]);
         if (cancelled) return;
+        log('✅ switchEffect done');
         setSwitching(false);
-
-        // The effect is in, but for a watch the wrist models may still be
-        // downloading. If they were already cached/ready, reflect that now.
         if (wrist && instance.isWristTrackingInitialized()) setWristReady(true);
       } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        console.error('[try-on] ERROR:', e);
         if (!cancelled) {
-          setError(e instanceof Error ? e.message : String(e));
+          setError(msg);
           setLoading(false);
           setSwitching(false);
         }

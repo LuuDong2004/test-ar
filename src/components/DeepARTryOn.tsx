@@ -70,9 +70,11 @@ export function DeepARTryOn({ effect, wrist, facing }: DeepARTryOnProps) {
     (async () => {
       try {
         log(`init start · wrist=${wrist} · facing=${facing} · root=${rootPath}`);
-        // FORCE wrist tracking to initialise here (trackingInit) instead of hoping
-        // switchEffect lazy-loads it — this SDK doesn't. The effect is loaded at
-        // init too; camera is started separately so we can turn mirroring off.
+        // Let DeepAR start its OWN camera here (cameraConfig.facingMode) so wrist
+        // tracking init receives frames — initialising it with the camera disabled
+        // appears to deadlock. Force wrist init via trackingInit. Mirror control is
+        // sacrificed for now (default camera) until tracking is confirmed working.
+        void mirror;
         const instance = await withTimeout(
           initialize({
             licenseKey: LICENSE_KEY,
@@ -81,7 +83,7 @@ export function DeepARTryOn({ effect, wrist, facing }: DeepARTryOnProps) {
             effect,
             effectOptions: wrist ? { trackingInit: { wrist: true } } : undefined,
             additionalOptions: {
-              cameraConfig: { disableDefaultCamera: true },
+              cameraConfig: { facingMode: facing },
               ...(wrist ? { wristTrackingConfig: WRIST_TRACKING_CONFIG } : {}),
             },
           }),
@@ -93,6 +95,7 @@ export function DeepARTryOn({ effect, wrist, facing }: DeepARTryOnProps) {
           return;
         }
         deeparRef.current = instance;
+        setLoading(false);
         log(`init done · wristInit=${instance.isWristTrackingInitialized?.()}`);
 
         instance.callbacks.onWristTrackingInitialized = () => {
@@ -107,14 +110,6 @@ export function DeepARTryOn({ effect, wrist, facing }: DeepARTryOnProps) {
           }
           if (!cancelled) setWristDetected(!!d?.detected);
         };
-
-        await instance.startCamera({
-          mirror,
-          mediaStreamConstraints: { video: { facingMode: { ideal: facing } }, audio: false },
-        });
-        if (cancelled) return;
-        setLoading(false);
-        log('camera started');
 
         if (wrist) {
           if (instance.isWristTrackingInitialized?.()) setWristReady(true);

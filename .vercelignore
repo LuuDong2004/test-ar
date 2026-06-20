@@ -1,0 +1,8 @@
+# Don't upload local-only / generated files to Vercel.
+# Crucially, keep .env.local out — an empty VITE_DEEPAR_LICENSE_KEY here would
+# override the real key set in the Vercel dashboard at build time.
+node_modules
+dist
+.env.local
+.env*.local
+viteerr.log

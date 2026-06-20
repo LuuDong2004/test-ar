@@ -81,10 +81,11 @@ export function DeepARTryOn({ effect, wrist, facing }: DeepARTryOnProps) {
             previewElement: el,
             rootPath,
             effect,
-            effectOptions: wrist ? { trackingInit: { wrist: true } } : undefined,
             additionalOptions: {
               cameraConfig: { facingMode: facing },
-              ...(wrist ? { wristTrackingConfig: WRIST_TRACKING_CONFIG } : {}),
+              // 5.6.3 forces wrist tracking init via the 'wristInit' hint (no
+              // effectOptions on this version); pin the asset paths too.
+              ...(wrist ? { hint: 'wristInit', wristTrackingConfig: WRIST_TRACKING_CONFIG } : {}),
             },
           }),
           45000,

@@ -1,14 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
 import { initialize, type DeepAR } from 'deepar';
-import { DEEPAR_ROOT_PATH } from '../config/deeparEffects';
+import { DEEPAR_ROOT_SELF, DEEPAR_ROOT_CDN } from '../config/deeparEffects';
 
 const LICENSE_KEY = (import.meta.env.VITE_DEEPAR_LICENSE_KEY as string | undefined) ?? '';
 
-// Pin the wrist tracking assets explicitly:
-//  - use the smaller FAST tracker (2.4 MB vs 3.6 MB) for a quicker first load;
-//  - point pose-estimation at the REAL file name (libxzimgPoseEstimation.wasm) —
-//    the SDK's documented default (libPoseEstimation.wasm) 404s and stalls init.
-const ROOT = DEEPAR_ROOT_PATH.replace(/\/$/, '');
+// Wrist assets are self-hosted (public/deepar) and pinned explicitly:
+//  - the smaller FAST tracker (2.4 MB vs 3.6 MB) for a quicker first load;
+//  - the REAL pose-estimation file name (libxzimgPoseEstimation.wasm) — the
+//    SDK's documented default (libPoseEstimation.wasm) 404s and stalls init.
+const ROOT = DEEPAR_ROOT_SELF.replace(/\/$/, '');
 const WRIST_TRACKING_CONFIG = {
   poseEstimationWasmPath: `${ROOT}/wasm/libxzimgPoseEstimation.wasm`,
   detectorPath: `${ROOT}/models/wrist/wrist-det-9.bin`,
@@ -61,13 +61,15 @@ export function DeepARTryOn({ effect, wrist, facing }: DeepARTryOnProps) {
     }
 
     const mirror = facing === 'user'; // selfie mirrored; rear (wrist) NOT mirrored
+    // Wrist self-hosts its assets (fast, cached); the face smoke-test uses the CDN.
+    const rootPath = wrist ? DEEPAR_ROOT_SELF : DEEPAR_ROOT_CDN;
 
     (async () => {
       try {
         const instance = await initialize({
           licenseKey: LICENSE_KEY,
           previewElement: el,
-          rootPath: DEEPAR_ROOT_PATH,
+          rootPath,
           additionalOptions: {
             cameraConfig: { disableDefaultCamera: true },
             // Only fetched when a wrist effect lazily inits tracking; pins the

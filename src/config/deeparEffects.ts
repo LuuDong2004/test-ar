@@ -1,17 +1,21 @@
 import { version as deeparVersion } from 'deepar';
 
-/**
- * DeepAR Web SDK asset root. The SDK fetches its wasm + ML models (including the
- * wrist detector/tracker) from here. We pin it to the EXACT installed version on
- * jsDelivr so the JS and the assets never drift. Override with
- * VITE_DEEPAR_ROOT_PATH (e.g. "/deepar") if you later self-host the SDK files.
- */
-export const DEEPAR_ROOT_PATH =
-  (import.meta.env.VITE_DEEPAR_ROOT_PATH as string | undefined) ||
-  `https://cdn.jsdelivr.net/npm/deepar@${deeparVersion}/`;
+const CDN = `https://cdn.jsdelivr.net/npm/deepar@${deeparVersion}`;
 
-/** Base URL for the effect files bundled with the SDK (face filters, used for the pipeline smoke-test). */
-const SDK_EFFECTS = `https://cdn.jsdelivr.net/npm/deepar@${deeparVersion}/effects`;
+/**
+ * DeepAR asset roots.
+ *  - WRIST self-hosts the wasm + wrist models from `public/deepar` (same origin
+ *    as the app, served by Vercel with a 1-year immutable cache) so it loads
+ *    fast and is cached after the first visit — no repeated CDN fetch.
+ *  - The face smoke-test stays on the CDN (we don't self-host face models).
+ * Override the self-hosted root with VITE_DEEPAR_ROOT_PATH if needed.
+ */
+export const DEEPAR_ROOT_SELF =
+  (import.meta.env.VITE_DEEPAR_ROOT_PATH as string | undefined) || '/deepar';
+export const DEEPAR_ROOT_CDN = `${CDN}/`;
+
+/** Base URL for the effect files bundled with the SDK (face filters, smoke-test). */
+const SDK_EFFECTS = `${CDN}/effects`;
 
 export interface DeepAREffect {
   /** Stable id (kept parallel to config/watches.ts where it maps to a watch). */

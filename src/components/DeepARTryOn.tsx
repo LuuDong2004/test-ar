@@ -64,27 +64,36 @@ export function DeepARTryOn({ effect, wrist, facing }: DeepARTryOnProps) {
     // Wrist self-hosts its assets (fast, cached); the face smoke-test uses the CDN.
     const rootPath = wrist ? DEEPAR_ROOT_SELF : DEEPAR_ROOT_CDN;
     const log = (m: string) => console.log(`[try-on] ${m}`);
+    const withTimeout = <T,>(p: Promise<T>, ms: number, label: string) =>
+      Promise.race([p, new Promise<T>((_, rej) => setTimeout(() => rej(new Error(`${label} quá ${ms / 1000}s`)), ms))]);
 
     (async () => {
       try {
         log(`init start · wrist=${wrist} · facing=${facing} · root=${rootPath}`);
-        const instance = await initialize({
-          licenseKey: LICENSE_KEY,
-          previewElement: el,
-          rootPath,
-          additionalOptions: {
-            cameraConfig: { disableDefaultCamera: true },
-            // Only fetched when a wrist effect lazily inits tracking; pins the
-            // fast model + correct pose-wasm so it loads fast and doesn't stall.
-            ...(wrist ? { wristTrackingConfig: WRIST_TRACKING_CONFIG } : {}),
-          },
-        });
+        // FORCE wrist tracking to initialise here (trackingInit) instead of hoping
+        // switchEffect lazy-loads it — this SDK doesn't. The effect is loaded at
+        // init too; camera is started separately so we can turn mirroring off.
+        const instance = await withTimeout(
+          initialize({
+            licenseKey: LICENSE_KEY,
+            previewElement: el,
+            rootPath,
+            effect,
+            effectOptions: wrist ? { trackingInit: { wrist: true } } : undefined,
+            additionalOptions: {
+              cameraConfig: { disableDefaultCamera: true },
+              ...(wrist ? { wristTrackingConfig: WRIST_TRACKING_CONFIG } : {}),
+            },
+          }),
+          45000,
+          'initialize',
+        );
         if (cancelled) {
           instance.shutdown();
           return;
         }
         deeparRef.current = instance;
-        log('init done (SDK ready)');
+        log(`init done · wristInit=${instance.isWristTrackingInitialized?.()}`);
 
         instance.callbacks.onWristTrackingInitialized = () => {
           log('✅ onWristTrackingInitialized');
@@ -107,29 +116,17 @@ export function DeepARTryOn({ effect, wrist, facing }: DeepARTryOnProps) {
         setLoading(false);
         log('camera started');
 
-        // Poll wrist init so we can see whether it ever completes even if
-        // switchEffect itself stalls.
         if (wrist) {
+          if (instance.isWristTrackingInitialized?.()) setWristReady(true);
           let ticks = 0;
           const poll = setInterval(() => {
             ticks++;
             const ok = deeparRef.current?.isWristTrackingInitialized?.();
             log(`wrist init check #${ticks}: ${ok}`);
+            if (ok && !cancelled) setWristReady(true);
             if (ok || cancelled || ticks > 20) clearInterval(poll);
           }, 2000);
         }
-
-        // Load the effect with a timeout so a stall surfaces instead of hanging.
-        setSwitching(true);
-        log(`switchEffect start: ${effect}`);
-        await Promise.race([
-          instance.switchEffect(effect),
-          new Promise((_, rej) => setTimeout(() => rej(new Error('switchEffect quá 30s — không hoàn tất')), 30000)),
-        ]);
-        if (cancelled) return;
-        log('✅ switchEffect done');
-        setSwitching(false);
-        if (wrist && instance.isWristTrackingInitialized()) setWristReady(true);
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
         console.error('[try-on] ERROR:', e);
